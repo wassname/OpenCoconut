@@ -14,6 +14,8 @@ cd OpenCoconut
 pip install -e .
 ```
 
+If you want to see the thoughts during training or inference, you can run with `DEBUG=1 python ...`.
+
 ## Future Work
 
 1. Improve the loss function
