@@ -10,7 +10,7 @@ def get_device():
     else:
         return "cpu"
 
-model_name = "coconut_output_stage3/checkpoint-1000"
+model_name = "coconut_output_stage3/checkpoint-10000"
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 streamer = TextStreamer(tokenizer, skip_prompt=False, skip_special_tokens=False)
@@ -32,4 +32,5 @@ outputs = model.generate(
     do_sample=True,
     max_new_tokens=64,
     streamer=streamer,
+    eos_token_id=tokenizer.eos_token_id,
 )
