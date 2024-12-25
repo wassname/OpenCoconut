@@ -121,7 +121,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         # NOTE: only generate thoughts in the prefilling phase
         if self.coconut_config.stages - 1 > 0 and input_ids.shape[1] > 1:
             num_thoughts = (
-                self.coconut_config.stages - 1 * self.coconut_config.continuous_thoughts
+                (self.coconut_config.stages - 1) * self.coconut_config.continuous_thoughts
             )
             inputs_embeds = self.get_input_embeddings()(input_ids)
 
