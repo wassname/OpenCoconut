@@ -4,6 +4,11 @@
 
 OpenCoconut intends to replicate the Chain of Continuous Thought (COCONUT) paper that implements a novel latent reasoning paradigm. The main idea is to generate thoughts in latent space by utilizing the hidden states during prefilling before we start decoding response. We build on the public dataset from the paper for math [casperhansen/gsm8k_synthetic_cot](https://huggingface.co/datasets/casperhansen/gsm8k_synthetic_cot).
 
+## Derivative/Similar Work
+
+1. Derivative: A clean demonstration of how a modified OpenCoconut using Gemma 2 leads to improved performance in translation tasks: https://github.com/vicksEmmanuel/latent-gemma
+3. Similar: LucidRains implements a custom Transformer from scratch with Coconut paradigm: https://github.com/lucidrains/coconut-pytorch
+
 ## Getting started
 
 Install the package and then go look in `examples` for how to run training and inference.
