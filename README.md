@@ -14,7 +14,7 @@ OpenCoconut intends to replicate the [Chain of Continuous Thought (COCONUT) pape
 Install the package and then go look in `examples` for how to run training and inference.
 
 ```
-# running on a machine with TODO GPU ram
+# developed on a machin with 32GB GPU RAM
 git clone https://github.com/casper-hansen/OpenCoconut.git
 cd OpenCoconut
 uv sync
