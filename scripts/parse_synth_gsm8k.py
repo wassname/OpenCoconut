@@ -1,3 +1,11 @@
+"""
+One off historic script to convert from 
+https://github.com/da03/Internalize_CoT_Step_by_Step
+to 
+https://huggingface.co/datasets/casperhansen/gsm8k_synthetic_cot
+
+casperhansen has already run this and made the result public on huggingace
+"""
 # MIT License
 # modified from https://github.com/da03/Internalize_CoT_Step_by_Step/blob/main/src/data.py
 

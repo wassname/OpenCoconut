@@ -11,13 +11,10 @@ from opencoconut import (
     CoconutConfig,
     CoTDataset,
 )
+from pathlib import Path
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def get_device():
@@ -33,7 +30,7 @@ def main():
     # Initialize model and tokenizer
     logger.info("Initializing model and tokenizer")
     model_name = "Qwen/Qwen2.5-0.5B"
-    output_dir = "./coconut_output"
+    output_dir = Path("./coconut_output")
 
     # tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -82,7 +79,7 @@ def main():
         )
         logger.info(f"dataset size: {len(dataset)}")
         model.current_stage = stage
-        current_output_dir = f"{output_dir}_stage{stage}"
+        current_output_dir = output_dir/"stage{stage}"
         training_args.output_dir = current_output_dir
 
         if stage == 0:
@@ -112,6 +109,12 @@ def main():
                 checkpoint_folder = os.path.join(current_output_dir, folder)
                 if os.path.isdir(checkpoint_folder):
                     tokenizer.save_pretrained(checkpoint_folder)
+
+        # save final checkpoint
+        current_output_dir = f"{output_dir}/stage{stage}/final"
+        model.save_pretrained(current_output_dir)
+        tokenizer.save_pretrained(checkpoint_folder)
+        logger.info(f"finished stage {stage}")
 
 
 if __name__ == "__main__":

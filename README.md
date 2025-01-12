@@ -2,7 +2,7 @@
 
 # OpenCoconut
 
-OpenCoconut intends to replicate the Chain of Continuous Thought (COCONUT) paper that implements a novel latent reasoning paradigm. The main idea is to generate thoughts in latent space by utilizing the hidden states during prefilling before we start decoding response. We build on the public dataset from the paper for math [casperhansen/gsm8k_synthetic_cot](https://huggingface.co/datasets/casperhansen/gsm8k_synthetic_cot).
+OpenCoconut intends to replicate the [Chain of Continuous Thought (COCONUT) paper](https://arxiv.org/abs/2412.06769) that implements a novel latent reasoning paradigm. The main idea is to generate thoughts in latent space by utilizing the hidden states during prefilling before we start decoding response. We build on the public dataset from the paper for math [casperhansen/gsm8k_synthetic_cot](https://huggingface.co/datasets/casperhansen/gsm8k_synthetic_cot).
 
 ## Derivative/Similar Work
 
@@ -14,9 +14,12 @@ OpenCoconut intends to replicate the Chain of Continuous Thought (COCONUT) paper
 Install the package and then go look in `examples` for how to run training and inference.
 
 ```
+# running on a machine with TODO GPU ram
 git clone https://github.com/casper-hansen/OpenCoconut.git
 cd OpenCoconut
-pip install -e .
+uv sync
+. ./.venv/bin/activate
+python examples/train.py
 ```
 
 If you want to see the thoughts during training or inference, you can run with `DEBUG=1 python ...`.
