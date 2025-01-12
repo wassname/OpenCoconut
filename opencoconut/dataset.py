@@ -130,6 +130,7 @@ def split_sequences(
             0
         ]
 
+        # FIXME if there ar not bot, warn or split all into one
         if len(bot_positions) > 0 and len(eot_positions) > 0:
             # Take first occurrence of each token
             bot_pos = bot_positions[0]
@@ -144,8 +145,18 @@ def split_sequences(
             language_mask.append(attention_mask[i][eot_pos:])
 
             # Split labels
-            latent_labels.append(labels[i][: bot_pos + 1])
-            language_labels.append(labels[i][eot_pos:])
+            if labels is not None:
+                latent_labels.append(labels[i][: bot_pos + 1])
+                language_labels.append(labels[i][eot_pos:])
+        else:
+            # If there are no delimiter tokens, use the whole sequence
+            latent_ids.append(input_ids[0][:0])
+            language_ids.append(input_ids[i])
+            latent_mask.append(attention_mask[i][:0])
+            language_mask.append(attention_mask[i])
+            if labels is not None:
+                latent_labels.append(labels[i][:0])
+                language_labels.append(labels[i])
 
     # Pad sequences
     latent_ids = torch.nn.utils.rnn.pad_sequence(
@@ -160,12 +171,17 @@ def split_sequences(
     language_mask = torch.nn.utils.rnn.pad_sequence(
         language_mask, batch_first=True, padding_value=0
     )
-    latent_labels = torch.nn.utils.rnn.pad_sequence(
-        latent_labels, batch_first=True, padding_value=-100
-    )
-    language_labels = torch.nn.utils.rnn.pad_sequence(
-        language_labels, batch_first=True, padding_value=-100
-    )
+    if labels is not None:
+        latent_labels = torch.nn.utils.rnn.pad_sequence(
+            latent_labels, batch_first=True, padding_value=-100
+        )
+        language_labels = torch.nn.utils.rnn.pad_sequence(
+            language_labels, batch_first=True, padding_value=-100
+        )
+    else:
+        latent_labels = None
+        language_labels = None
+    
 
     return (
         latent_ids,

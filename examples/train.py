@@ -12,10 +12,14 @@ from opencoconut import (
     CoTDataset,
 )
 from pathlib import Path
+import gc
 
 # Configure logging
 from loguru import logger
 
+def clear_memory():
+    torch.cuda.empty_cache()
+    gc.collect()
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -26,14 +30,29 @@ def get_device():
         return "cpu"
 
 
-def main():
+def train():
+    config_small = {
+        'model_name': "Qwen/Qwen2.5-0.5B",
+        'batch_size': 8,
+        'learning_rate': 1e-4,
+        'steps': 1000,
+        'output_dir': "./output/small",
+    }
+    config_medium = {
+        'model_name': "Qwen/Qwen2.5-2.5B",
+        'batch_size': 1,
+        'learning_rate': 5e-5,
+        'steps': 30000,
+        'output_dir': "./output/small",
+    }
+    config = config_small
+
     # Initialize model and tokenizer
     logger.info("Initializing model and tokenizer")
-    model_name = "Qwen/Qwen2.5-0.5B"
-    output_dir = Path("./coconut_output")
+    output_dir = Path(config['output_dir'])
 
     # tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
     tokenizer.bos_token = "<|im_start|>"
     tokenizer.eos_token = "<|im_end|>"
     tokenizer.pad_token = "<|endoftext|>"
@@ -45,7 +64,7 @@ def main():
         continuous_thoughts=2,
     )
     model = AutoCoconutForCausalLM.from_pretrained(
-        model_name, config, torch_dtype=torch.bfloat16, device_map=get_device()
+        config['model_name'], config, torch_dtype=torch.bfloat16, device_map=get_device()
     )
     model.resize_token_embeddings(len(tokenizer))
     if os.getenv("DEBUG", "0") == "1":
@@ -54,12 +73,12 @@ def main():
     # Set up training arguments
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=1,
+        per_device_train_batch_size=config['batch_size'],
         gradient_accumulation_steps=1,
-        learning_rate=1e-4,
+        learning_rate=config['learning_rate'],
         warmup_ratio=0.1,
-        max_steps=1000,
-        logging_steps=1,
+        max_steps=config['steps'],
+        logging_steps=10,
         save_steps=10000,
         bf16=True,
         bf16_full_eval=True,
@@ -73,7 +92,7 @@ def main():
         dataset = CoTDataset(
             "casperhansen/gsm8k_synthetic_cot",
             tokenizer,
-            max_length=512,
+            max_length=512, # 256 should be fine?
             coconut_config=config,
             current_stage=stage,
         )
@@ -116,6 +135,14 @@ def main():
         tokenizer.save_pretrained(checkpoint_folder)
         logger.info(f"finished stage {stage}")
 
+        clear_memory()
+
+
+
 
 if __name__ == "__main__":
-    main()
+    train()
+
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+    accuracy = evaluate(dataloader, tokenizer, model, args.max_new_tokens)
+    print(f"Accuracy: {accuracy}")

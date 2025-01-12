@@ -87,7 +87,7 @@ def get_device():
         return "cpu"
 
 
-def main():
+def eval():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default=None)
     parser.add_argument("--max_new_tokens", type=int, default=512)
@@ -118,4 +118,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    eval()

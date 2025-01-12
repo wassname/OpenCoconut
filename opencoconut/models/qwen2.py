@@ -63,6 +63,29 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
 
         return all_thought_outputs
 
+    def append_bot(self, input_ids, attention_mask):
+        input_ids = torch.concat(
+            [
+                input_ids,
+                torch.tensor(
+                    [[self.coconut_config.bot_id]] * input_ids.shape[0],
+                    device=input_ids.device,
+                ),
+            ],
+            dim=1,
+        )
+        if attention_mask is not None:
+            attention_mask = torch.concat(
+                [
+                    attention_mask,
+                    torch.ones(
+                        attention_mask.shape[0], 1, device=attention_mask.device
+                    ),
+                ],
+                dim=1,
+            )
+        return input_ids, attention_mask
+
     def infer_forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -95,25 +118,27 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         batch_size = input_ids.shape[0]
 
         if input_ids.shape[1] > 1:
-            input_ids = torch.concat(
-                [
-                    input_ids,
-                    torch.tensor(
-                        [[self.coconut_config.bot_id]] * batch_size,
-                        device=input_ids.device,
-                    ),
-                ],
-                dim=1,
-            )
-            attention_mask = torch.concat(
-                [
-                    attention_mask,
-                    torch.ones(
-                        attention_mask.shape[0], 1, device=attention_mask.device
-                    ),
-                ],
-                dim=1,
-            )
+
+            input_ids, attention_mask = self.append_bot(input_ids, attention_mask)
+            # input_ids = torch.concat(
+            #     [
+            #         input_ids,
+            #         torch.tensor(
+            #             [[self.coconut_config.bot_id]] * batch_size,
+            #             device=input_ids.device,
+            #         ),
+            #     ],
+            #     dim=1,
+            # )
+            # attention_mask = torch.concat(
+            #     [
+            #         attention_mask,
+            #         torch.ones(
+            #             attention_mask.shape[0], 1, device=attention_mask.device
+            #         ),
+            #     ],
+            #     dim=1,
+            # )
 
         if past_key_values is None:
             past_key_values = DynamicCache()
@@ -237,7 +262,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         if past_key_values is None:
             past_key_values = DynamicCache()
 
-        if self.current_stage > 0:
+        if (self.current_stage > 0) and (thought_ids.shape[1] > 1):
             num_thoughts = self.current_stage * self.coconut_config.continuous_thoughts
             inputs_embeds = self.get_input_embeddings()(thought_ids)
 
