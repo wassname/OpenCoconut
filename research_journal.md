@@ -43,3 +43,62 @@ print("thought_labels?")
 ```
 
 Q is thoughts_forward mean to output something... I'm getting nothign
+
+
+Ah in training I am now getting a mix between kv cache size and inputs
+
+
+The expanded size of the tensor (299) must match the existing size (214) at non-singleton dimension 3.  Target sizes: [12, 14, 214, 299].  Tensor sizes: [12, 1, 214, 214]
+
+
+query.shape
+torch.Size([12, 14, 214, 64])
+key.shape
+torch.Size([12, 14, 299, 64])
+value.shape
+torch.Size([12, 14, 299, 64])
+
+input_ids.shape
+torch.Size([12, 256])
+
+and 2 thoughts
+thought_hidden[0].shape
+torch.Size([12, 2, 896])
+len(thought_hidden)
+25
+
+input_ids[:, :bot_pos+1].shape
+torch.Size([12, 42])
+2 thoughts
+
+so there are either 43 or 85 missing?
+which is the shape of the prefix... this is added on each forward through....
+
+
+
+len(past_kv.key_cache)
+24
+past_kv.key_cache[0].shape
+torch.Size([12, 2, 299, 64])
+
+maybe just chacne cache position,
+how did lucidrains do it?
+
+can use?
+
+    cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+        Indices depicting the position of the input sequence tokens in the sequence. Contrarily to `position_ids`,
+        this tensor is not affected by padding. It is used to update the cache in the correct position and to infer
+        the complete sequence length.
+
+past_key_values.get_seq_length()
+
+should be like
+
+    cache_position = torch.arange(
+        past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+    )
+
+
+hm so cache position doesn't help
+maybe I can just append the last part of the thinking cache onto the last one???

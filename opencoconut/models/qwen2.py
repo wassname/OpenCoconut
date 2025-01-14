@@ -8,10 +8,11 @@ from transformers import (
     DynamicCache,
     PreTrainedTokenizer,
 )
-from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.modeling_outputs import CausalLMOutputWithPast, BaseModelOutputWithPast
 from typing import Tuple, List, Union
 from . import CoconutConfig
 from ..dataset import split_sequences
+from einops import rearrange
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
     def thoughts_forward(
         self,
         inputs_embeds: torch.FloatTensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.LongTensor] = None,
+        # attention_mask: Optional[torch.Tensor] = None,
+        # labels: Optional[torch.LongTensor] = None,
         past_key_values: Optional[DynamicCache] = None,
         num_thoughts: int = 1,
         tokens_per_thought: int = 2,
@@ -43,75 +44,92 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         Generate continuous thought embeddings.
         """
         num_total_thoughts = num_thoughts * tokens_per_thought
-        all_hidden_states = [inputs_embeds]
+        all_hidden_states = []
         all_thought_outputs = []
-        current_mask = attention_mask
-        current_labels = labels
+        # current_mask = attention_mask
+        # current_labels = labels
+
+        # past_seen_tokens = past_key_values.get_seq_length()
+
+
+        def copy_cache(cache: DynamicCache):
+            new = DynamicCache()
+            new._seen_tokens = cache._seen_tokens
+            new.key_cache = [
+                k.clone()
+                for k in cache.key_cache
+            ]
+            new.value_cache = [
+                v.clone()
+                for v in cache.value_cache
+            ]
+            return new
+
 
         for t in range(num_total_thoughts):
+
+            current_kv = copy_cache(past_key_values)
+            # cache_position = torch.arange(
+            #     past_seen_tokens + t, past_seen_tokens + t + 1, device=inputs_embeds.device
+            # )
+            # cache_position = torch.arange(
+            #     0, 1, device=inputs_embeds.device
+            # )
+            print(f'kv.{t}-a', past_key_values[0][0].shape, past_key_values.seen_tokens)
             # Generate next thought embedding
+
+            # TODO try with super().forward
             outputs = self.model.forward(
                 inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                past_key_values=past_key_values,
+                # attention_mask=current_mask,
+                past_key_values=current_kv,
+                # cache_position=cache_position,
                 use_cache=True,
                 return_dict=True,
+                output_hidden_states=True,
             )
 
-            # Extract and store next hidden state
-            next_hidden = outputs.last_hidden_state[:, -1:, :]
-            all_hidden_states.append(next_hidden)
+            # TODO add just last cache to past_key_values
+            past_key_values.key_cache.append(outputs.past_key_values.key_cache[-1])
+            past_key_values.value_cache.append(outputs.past_key_values.value_cache[-1])
+            past_key_values.seen_tokens += 1
 
-            # Extend attention mask and labels
-            if current_mask is not None:
-                current_mask = append_tensor(current_mask, 1)
-            if current_labels is not None:
-                current_labels = append_tensor(current_labels, self.ignore_label)
+            # Extract and store next hidden state
+            inputs_embeds = outputs.last_hidden_state[:, -1:, :]
+            hs = torch.stack(outputs.hidden_states)[:, :, -1, :] # [layer, batch, seq, hidden]
+            all_hidden_states.append(hs)
+
+            # # Extend attention mask and labels
+            # if current_mask is not None:
+            #     current_mask = append_tensor(current_mask, 1)
+            # if current_labels is not None:
+            #     current_labels = append_tensor(current_labels, self.ignore_label)
+            print(f'kv.{t}-b', past_key_values[0][0].shape, past_key_values.seen_tokens)
+            print(f'kv.{t}-c', outputs.past_key_values[0][0].shape)
             
             past_key_values = outputs.past_key_values
 
 
-        if self.debug:
+        # if self.debug:
 
-            all_hidden_states
-            all_thought_outputs.append(
-                self.hidden_states_to_token(inputs_embeds, lm_head=True)
-            )
+        #     all_hidden_states
+        #     all_thought_outputs.append(
+        #         self.hidden_states_to_token(inputs_embeds, lm_head=True)
+        #     )
+
+        # hidden states are meant to be tuple([layer, batch, seq, hidden]), but this is [seq, layer, batch, hidden]
+        # so we need to transpose using einops
+        if all_hidden_states:
+            all_hidden_states = rearrange(all_hidden_states, 's l b h -> l b s h')
+
 
         return (
-            torch.cat(all_hidden_states, dim=1),
-            current_mask,
-            current_labels,
+            tuple(all_hidden_states),
+            # current_mask,
+            # current_labels,
             past_key_values
         )
 
-    # def append_bot(self, input_ids, attention_mask):
-    #     """append beginning of thought token."""
-
-    #     input_ids = append_tensor(input_ids, self.coconut_config.bot_id)
-    #     if attention_mask is not None:
-    #         attention_mask = append_tensor(attention_mask, 1)
-    #     input_ids = torch.concat(
-    #         [
-    #             input_ids,
-    #             torch.tensor(
-    #                 [[self.coconut_config.bot_id]] * input_ids.shape[0],
-    #                 device=input_ids.device,
-    #             ),
-    #         ],
-    #         dim=1,
-    #     )
-    #     if attention_mask is not None:
-    #         attention_mask = torch.concat(
-    #             [
-    #                 attention_mask,
-    #                 torch.ones(
-    #                     attention_mask.shape[0], 1, device=attention_mask.device
-    #                 ),
-    #             ],
-    #             dim=1,
-    #         )
-    #     return input_ids, attention_mask
 
     def append_bot_token(
         self,
@@ -120,21 +138,12 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
     ) -> Tuple[torch.LongTensor, torch.Tensor]:
         """Append BOT token if not present."""
         if input_ids.shape[1] > 1:
-            # input_ids = torch.cat([
-            #     input_ids,
-            #     torch.full(
-            #         (input_ids.shape[0], 1),
-            #         self.config.bot_token_id,
-            #         device=input_ids.device
-            #     )
-            # ], dim=1)
-            # FIXME can't I usee append_tensor here?
-            input_ids = append_tensor(input_ids, self.config.bot_token_id)
+            input_ids = append_tensor(input_ids, self.coconut_config.bot_id)
             if attention_mask is not None:
                 attention_mask = append_tensor(attention_mask, 1)
         return input_ids, attention_mask
     
-    def inference_forward(
+    def infer_forward(
         self,
         input_ids: torch.LongTensor,
         attention_mask: torch.Tensor,
@@ -144,53 +153,74 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
     ) -> CausalLMOutputWithPast:
         """Inference with continuous thought generation."""
         batch_size = input_ids.shape[0]
-        num_thoughts = num_thoughts or (self.current_stage * self.config.continuous_thoughts)
+        num_thoughts = num_thoughts or (self.current_stage * self.coconut_config.continuous_thoughts)
         
         # Inject BOT token if needed
         input_ids, attention_mask = self.append_bot_token(input_ids, attention_mask)
         
         # Initial context
-        context_outputs = super().forward(
+        context_outputs = self.model.forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             use_cache=True,
-            return_dict=True
+            return_dict=True,
+            **kwargs
         )
 
         # Generate thoughts using shared implementation
-        thought_hidden, thought_mask, _, past_kv = self.thoughts_forward(
-            hidden_states=context_outputs.last_hidden_state[:, -1:, :],
-            attention_mask=attention_mask,
+        thought_hidden, past_kv = self.thoughts_forward(
+            inputs_embeds=context_outputs.last_hidden_state[:, -1:, :],
+            # attention_mask=attention_mask,
             past_key_values=context_outputs.past_key_values,
             num_thoughts=num_thoughts,
-            tokens_per_thought=self.config.continuous_thoughts,
-            temperature=temperature
+            tokens_per_thought=self.coconut_config.continuous_thoughts,
+            # temperature=temperature
         )
 
         # Append EOT and generate final output
         eot_ids = append_tensor(
-            torch.empty(batch_size, 0, dtype=torch.long, device=input_ids.device),
-            self.config.eot_token_id,
-            num=1
+            input_ids[:, -1:-1],
+            self.coconut_config.eot_id
         )
         
+        del kwargs['labels']
         suffix_outputs = super().forward(
             input_ids=eot_ids,
-            attention_mask=append_tensor(thought_mask, 1),
+            # attention_mask=append_tensor(thought_mask, 1),
             past_key_values=past_kv,
             **kwargs
         )
 
         return self.combine_triple_outputs(
-            context_outputs, thought_hidden, suffix_outputs, kwargs
+            context_outputs, 
+            thought_hidden, 
+            suffix_outputs, 
+            **kwargs
         )
 
     
-    def combine_triple_outputs(self, prefix_outputs, thought_hidden, suffix_outputs, loss=None, **kwargs):
+    def combine_triple_outputs(self, prefix_outputs: BaseModelOutputWithPast, thought_hidden: Tuple[torch.Tensor], suffix_outputs: CausalLMOutputWithPast, loss=None, **kwargs):
         """Combine prefix, thought and suffix outputs."""
 
         if kwargs.get("output_hidden_states", False):
-            hidden_states = prefix_outputs.hidden_states + [thought_hidden] + suffix_outputs.hidden_states
+            # hs shape [layer, batch, seq, hidden], we want to append by sequence
+            # hidden_states = prefix_outputs.hidden_states + tuple(thought_hidden) + suffix_outputs.hidden_states
+
+            thoughts = [prefix_outputs.hidden_states]
+            if thought_hidden:
+                thoughts.append(thought_hidden)
+            thoughts.append(suffix_outputs.hidden_states)
+
+            # print('3a', torch.stack(prefix_outputs.hidden_states).shape)
+            # if thought_hidden:
+            #     print(1, torch.stack(thought_hidden).shape)
+            # print('3b', torch.stack(suffix_outputs.hidden_states).shape)
+
+            hidden_states = []
+            for i in range(len(prefix_outputs.hidden_states)):
+                hidden_states.append(
+                    torch.cat([x[i] for x in thoughts], dim=1)
+                )
         else:
             hidden_states = None
 
@@ -199,103 +229,11 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         
         return CausalLMOutputWithPast(
             loss=loss,
-            logits=suffix_outputs.logits,
+            logits=getattr(suffix_outputs, 'logits', None),
             past_key_values=suffix_outputs.past_key_values,
             hidden_states=hidden_states,
         )
     
-    # def infer_forward(
-    #     self,
-    #     input_ids: torch.LongTensor = None,
-    #     attention_mask: Optional[torch.Tensor] = None,
-    #     past_key_values: Optional[Union[DynamicCache, List[torch.FloatTensor]]] = None,
-    #     labels: Optional[torch.LongTensor] = None,
-    #     **loss_kwargs,
-    # ):
-    #     batch_size = input_ids.shape[0]
-
-    #     if input_ids.shape[1] > 1:
-    #         input_ids = append_tensor(input_ids, self.coconut_config.bot_id)
-    #         if attention_mask is not None:
-    #             attention_mask = append_tensor(attention_mask, 1)
-
-    #     if past_key_values is None:
-    #         past_key_values = DynamicCache()
-
-    #     # NOTE: only generate thoughts in the prefilling phase
-    #     if self.coconut_config.stages - 1 > 0 and input_ids.shape[1] > 1:
-    #         num_thoughts = (
-    #             (self.coconut_config.stages - 1) * self.coconut_config.continuous_thoughts
-    #         )
-    #         inputs_embeds = self.get_input_embeddings()(input_ids)
-
-    #         all_thought_outputs = self.thoughts_forward(
-    #             num_thoughts, inputs_embeds, attention_mask, past_key_values
-    #         )
-
-    #         language_ids = torch.tensor(
-    #             [[self.coconut_config.eot_id]] * batch_size,
-    #             device=inputs_embeds.device,
-    #         )
-    #         inputs_embeds = self.get_input_embeddings()(language_ids)
-
-    #         # we fix the mask and labels lengths by inserting between <bot><eot>
-    #         insert_indices = (input_ids == self.coconut_config.eot_id).nonzero(
-    #             as_tuple=True
-    #         )[1]
-
-    #         new_attention_mask = []
-    #         for b in range(batch_size):
-
-    #             # append the thought tokens to the attention mask
-    #             new_attention_mask.append(
-    #                 torch.cat(
-    #                     (
-    #                         attention_mask[b],
-    #                         torch.ones(
-    #                             num_thoughts - 1,
-    #                             dtype=attention_mask.dtype,
-    #                             device=attention_mask.device,
-    #                         ),
-    #                     )
-    #                 )
-    #             )
-    #         attention_mask = torch.stack(new_attention_mask, dim=0)
-            
-
-    #         # Forward pass with combined embeddings
-    #         outputs = super().forward(
-    #             input_ids=None,
-    #             attention_mask=attention_mask,
-    #             position_ids=None,
-    #             past_key_values=past_key_values,
-    #             inputs_embeds=inputs_embeds,
-    #             labels=labels,
-    #             use_cache=True,
-    #             # output_attentions=output_attentions,
-    #             output_hidden_states=True,
-    #             return_dict=True,
-    #             # num_logits_to_keep=num_logits_to_keep,
-    #         )
-
-    #         if self.debug:
-    #             self._print_thought_and_final_tokens(
-    #                 outputs.logits, all_thought_outputs
-    #             )
-
-    #     else:
-    #         # Standard forward pass
-    #         outputs = super().forward(
-    #             input_ids=input_ids,
-    #             attention_mask=attention_mask,
-    #             past_key_values=past_key_values,
-    #             inputs_embeds=None,
-    #             labels=labels,
-    #             return_dict=True,
-    #             **loss_kwargs,
-    #         )
-
-    #     return outputs
 
     def train_forward(
         self,
@@ -314,34 +252,40 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
             )
         
         # Find BOT/EOT positions, for simplicity we assume there is only one in train
-        bot_pos = (input_ids == self.config.bot_token_id).nonzero()[:, 1][0]
-        eot_pos = (input_ids == self.config.eot_token_id).nonzero()[:, 1][0]
+        bot_pos = (input_ids == self.coconut_config.bot_id).nonzero()[:, 1][0]
+        eot_pos = (input_ids == self.coconut_config.eot_id).nonzero()[:, 1][0]
         
         # Process prefix sequence (including BOT token)
-        prefix_outputs = super().forward(
+        prefix_outputs = self.model.forward(
             input_ids=input_ids[:, :bot_pos+1],
             attention_mask=attention_mask[:, :bot_pos+1],
             labels=labels[:, :bot_pos+1] if labels is not None else None,
             use_cache=True,
-            return_dict=True
+            return_dict=True,
+            return_hidden_states=True,
         )
+        print('kv0', prefix_outputs.past_key_values[0][0].shape)
 
         # Generate thoughts
-        thought_hidden, thought_mask, thought_labels, past_kv = self.thoughts_forward(
-            hidden_states=prefix_outputs.last_hidden_state[:, -1:, :],
-            attention_mask=attention_mask[:, :bot_pos+1],
-            labels=labels[:, :bot_pos+1] if labels is not None else None,
+        # FIXME this is doubling kv cache size...
+        thought_hidden, past_kv = self.thoughts_forward(
+            inputs_embeds=prefix_outputs.last_hidden_state,
+            # attention_mask=attention_mask[:, :bot_pos+1],
+            # labels=labels[:, :bot_pos+1] if labels is not None else None,
             past_key_values=prefix_outputs.past_key_values,
             num_thoughts=self.current_stage,
-            tokens_per_thought=self.config.continuous_thoughts
+            tokens_per_thought=self.coconut_config.continuous_thoughts
         )
+        print('kv1', prefix_outputs.past_key_values[0][0].shape)
+        print('kv2', past_kv[0][0].shape)
 
         # Process suffix (after EOT)
-        suffix_outputs = super().forward(
+        suffix_outputs = self.model.forward(
             input_ids=input_ids[:, eot_pos:],
             attention_mask=attention_mask[:, eot_pos:],
             past_key_values=past_kv, # Contains both prefix AND thought contexts
             labels=labels[:, eot_pos:] if labels is not None else None,
+            return_hidden_states=True,
             **kwargs
         )
 
@@ -380,40 +324,3 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         )
 
         return outputs
-
-    @torch.no_grad()
-    def hidden_states_to_token(self, logits: torch.Tensor, lm_head=False):
-        if lm_head:
-            logits = self.lm_head(logits)
-        probs = torch.nn.functional.softmax(logits[:, -1, :], dim=-1)
-        top_probs, top_indices = torch.topk(probs, 3)
-
-        tokens = []
-
-        for prob, token_id in zip(top_probs.squeeze(), top_indices.squeeze()):
-            tokens.append(
-                {
-                    "token": self.tokenizer.decode(token_id.item()),
-                    "prob": prob.item(),
-                    "token_id": token_id.item(),
-                }
-            )
-
-        return tokens
-
-    def _print_thought_and_final_tokens(
-        self, logits: torch.Tensor, all_thought_outputs: List[torch.Tensor]
-    ):
-        final_thoughts = []
-        final_token = self.hidden_states_to_token(logits)[0]
-        for i, sampled_tokens in enumerate(all_thought_outputs):
-            tokens_formatted = []
-            for j, token in enumerate(sampled_tokens):
-                tokens_formatted.append(
-                    f"t_{i},{j}: [{token['token'].strip()}] (p: {token['prob']:.3f})"
-                )
-            final_thoughts.append((" || ").join(tokens_formatted))
-        print("\n".join(final_thoughts))
-        print(
-            f"t_final: [{final_token['token'].strip()}] (p: {final_token['prob']:.3f})"
-        )
