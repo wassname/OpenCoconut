@@ -30,19 +30,24 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         attention_mask,
         past_key_values,
     ):
+        """
+        Generate continuous thought embeddings.
+        """
         all_thought_outputs = []
 
         for t in range(num_thoughts):
             outputs = self.model.forward(
+                inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
                 past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
                 use_cache=True,
                 return_dict=True,
             )
 
-            # The inputs for the next thought will be the current hidden state
+            # The inputs for the next thought will be the current hidden state, last token?
             inputs_embeds = outputs.last_hidden_state[:, -1:, :]
+
+            # add attention mask for thought token
             attention_mask = torch.cat(
                 (
                     attention_mask,
@@ -64,6 +69,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         return all_thought_outputs
 
     def append_bot(self, input_ids, attention_mask):
+        """append beginning of thought token."""
         input_ids = torch.concat(
             [
                 input_ids,
@@ -102,6 +108,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         num_logits_to_keep: int = 0,
         **loss_kwargs,
     ):
+        # # FIXME can I just reuse train_forward here with no labels
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -154,15 +161,21 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
                 num_thoughts, inputs_embeds, attention_mask, past_key_values
             )
 
-            inputs_embeds = self.get_input_embeddings()(
-                torch.tensor(
-                    [[self.coconut_config.eot_id]] * batch_size,
-                    device=inputs_embeds.device,
-                )
+            language_ids = torch.tensor(
+                [[self.coconut_config.eot_id]] * batch_size,
+                device=inputs_embeds.device,
             )
+            inputs_embeds = self.get_input_embeddings()(language_ids)
+
+            # we fix the mask and labels lengths by inserting between <bot><eot>
+            insert_indices = (input_ids == self.coconut_config.eot_id).nonzero(
+                as_tuple=True
+            )[1]
 
             new_attention_mask = []
             for b in range(batch_size):
+
+                # append the thought tokens to the attention mask
                 new_attention_mask.append(
                     torch.cat(
                         (
@@ -176,6 +189,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
                     )
                 )
             attention_mask = torch.stack(new_attention_mask, dim=0)
+            
 
             # Forward pass with combined embeddings
             outputs = super().forward(
@@ -266,13 +280,16 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
             num_thoughts = self.current_stage * self.coconut_config.continuous_thoughts
             inputs_embeds = self.get_input_embeddings()(thought_ids)
 
+            # this just changes the key values
             all_thought_outputs = self.thoughts_forward(
                 num_thoughts, inputs_embeds, thought_mask, past_key_values
             )
 
-            inputs_embeds = self.get_input_embeddings()(language_ids)
 
-            # we fix the mask and labels lengths by inserting between <bot><eot>
+            language_embeds = self.get_input_embeddings()(language_ids)
+
+            # we fix the mask and labels lengths by inserting null labels between <bot><eot>
+            # TODO: mike, why num_thoughts - 1? what are we fixing?
             insert_indices = (input_ids == self.coconut_config.eot_id).nonzero(
                 as_tuple=True
             )[1]
@@ -315,6 +332,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
             labels = torch.stack(new_labels, dim=0)
 
             # FIXME: cannot reuse past_key_values from generating thoughts
+            # wassname: but this is the only thing thought modify?
             past_key_values = DynamicCache()
 
             # Forward pass with combined embeddings
@@ -323,7 +341,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
                 attention_mask=attention_mask,
                 position_ids=None,
                 past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
+                inputs_embeds=language_embeds,
                 labels=language_labels,
                 use_cache=True,
                 output_attentions=output_attentions,
