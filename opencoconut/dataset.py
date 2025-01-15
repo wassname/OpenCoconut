@@ -67,6 +67,7 @@ class CoTDataset(Dataset):
             add_special_tokens=True,
             padding="max_length",
             truncation=True,
+            padding_side='left',
             return_tensors="pt",
         )
 

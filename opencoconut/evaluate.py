@@ -35,6 +35,29 @@ def _pp(s, tokenizer):
     return s
 
 
+# def generate(
+#     model,
+#     input_ids,
+#     attention_mask,
+#     max_new_tokens=1,
+#     eos_token_id=None,
+#     ):
+#     # Generate one token at a time using kv_cache
+
+#     i = 0
+#     while i < max_new_tokens:
+#         beam_output = model.forward(
+#             input_ids=input_ids,
+#             attention_mask=attention_mask,
+#             max_new_tokens=1,
+#             eos_token_id=eos_token_id,
+#             pad_token_id=model.tokenizer.pad_token_id,
+#             # use_cache=False,
+#         )
+#         i += 1
+
+
+
 @torch.no_grad()
 def evaluate(
     dataloader,

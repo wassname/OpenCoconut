@@ -134,3 +134,36 @@ Then I need to join all the outputs, which I can make a function for
 
 
 Another idea is just to go step by step, with a batch, with recusion at each step, the transformer can switch to using it or not
+
+# 2025-01-15 16:22:36
+
+Ok this branch I will try to simplify so
+- NO inserting tokens!!!
+- but everything is token by token (will this slow it down, possibly)
+- the supressed outputs from the prev are added, if the model chooses
+
+
+About supressed activations
+
+    Novel experiment: Here we define a transform to isolate supressed activations, where we hypothesis that style/concepts/scratchpads and other internal only representations must be stored.
+
+    See the following references for more information:
+    - https://arxiv.org/html/2406.19384v1
+        - > Previous work suggests that networks contain ensembles of “prediction" neurons, which act as probability promoters [66, 24, 32] and work in tandem with suppression neurons (Section 5.4). 
+
+    - https://arxiv.org/pdf/2401.12181
+        > We find a striking pattern which is remarkably consistent across the different seeds: after about the halfway point in the model, prediction neurons become 
+
+
+Ah damn it's much more memory intensive... maybe I should skip it for some tokens? only after bos? only during bos? or can I do a hard switch? but then there will be no grad
+
+I guess during inference it can be turned off mostly....
+maybe I can do gradient clipping or some trick from lstms
+
+maybe I could cut the gradient off after a few its?
+
+
+TODO:
+- no need for stages?
+- no need for special tokens or datasets
+- init switch as near zero
