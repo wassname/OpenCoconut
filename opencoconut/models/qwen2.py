@@ -55,6 +55,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         """
         # supressed_act = rearrange(list(hidden_states), 'l b 1 h -> l b h').diff(dim=0).clamp(min=None, max=0)
         # hs = supressed_act[-1][:, None] # last layer, add dummy sequence dim
+        # FIXME might need layer norm?
 
         # just get last layer, last token
         hs = hidden_states[-1][:, -1:, :]
@@ -140,6 +141,15 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         
         # Inject BOT token if needed
         input_ids, attention_mask = self.append_bot_token(input_ids, attention_mask)
+
+        if 'use_cache' in kwargs:
+            del kwargs['use_cache']
+        if 'return_dict' in kwargs:
+            del kwargs['return_dict']
+
+        if 'past_key_values' in kwargs:
+            # raise NotImplementedError("past_key_values should not be set")
+            del kwargs['past_key_values']
         
         # Initial context
         context_outputs = self.model.forward(
@@ -240,7 +250,10 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         
         # Find BOT/EOT positions, for simplicity we assume there is only one in train
         eot_pos = (input_ids == self.coconut_config.eot_id).nonzero(as_tuple=True)
-        mask_prefix = torch.arange(input_ids.shape[1], device=input_ids.device).expand(input_ids.shape[0], -1) <= eot_pos[1].unsqueeze(1)
+        if len(eot_pos[1]):
+            mask_prefix = torch.arange(input_ids.shape[1], device=input_ids.device).expand(input_ids.shape[0], -1) <= eot_pos[1].unsqueeze(1)
+        else:
+            mask_prefix = input_ids.new_ones(input_ids.shape)
         
         # Process prefix sequence (including BOT token)
         prefix_outputs = self.model.forward(
@@ -267,6 +280,12 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         if attention_mask is None:
             attention_mask = input_ids.new_ones(input_ids.shape)
         for b in range(input_ids.shape[0]):
+            if len(eot_pos[1]) == 0:
+                inputs_embeds2.append(inputs_embeds[b])
+                attention_mask2.append(attention_mask[b])
+                if labels is not None:
+                    labels2.append(labels[b])
+                continue
             pos = eot_pos[1][b]
 
             inputs_embeds2.append(
@@ -284,17 +303,21 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
                     attention_mask[b, pos+1:]
                 ], dim=0)
             )
-            labels2.append(
-                torch.cat([
-                    labels[b, :pos+1], 
-                    labels.new_full((n,), -100), 
-                    labels[b, pos+1:]
-                ], dim=0)
-            )
+            if labels is not None:
+                labels2.append(
+                    torch.cat([
+                        labels[b, :pos+1], 
+                        labels.new_full((n,), -100), 
+                        labels[b, pos+1:]
+                    ], dim=0)
+                )
 
         inputs_embeds2 = torch.stack(inputs_embeds2)
         attention_mask2 = torch.stack(attention_mask2)
-        labels2 = torch.stack(labels2)
+        if labels is not None:
+            labels2 = torch.stack(labels2)
+        else:
+            labels2 = None
         # TODO check ordering bot, thoughts, eot
 
         # b= 0
@@ -317,6 +340,11 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         # it's get even more complicated when we have to handle multiple batches, with multiple thoughts, this is the simplest way to code it
 
         # FIXME this is a simple way to write it... but the gradient seems complex. It might be better to it one token at a time and use the cache. This might use less memory and too?
+
+        if 'inputs_embeds' in kwargs:
+            if kwargs['inputs_embeds'] is not None:
+                raise ValueError("inputs_embeds should not be set")
+            del kwargs['inputs_embeds']
         return super().forward(
             inputs_embeds=inputs_embeds2,
             attention_mask=attention_mask2,
@@ -335,6 +363,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
             forward_fn = self.train_forward
         else:
             forward_fn = self.infer_forward
+
 
         outputs = forward_fn(
             input_ids=input_ids,

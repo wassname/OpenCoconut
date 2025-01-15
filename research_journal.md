@@ -127,3 +127,10 @@ With my
 model 7gb
 stage 0: 17gb
 stage 1: 23.3
+
+
+For the better version I just need to do bot+i, and then I can do a forward pass with the cache. This is a bit more code, but should be faster and more memory efficient. I'll do this next.
+Then I need to join all the outputs, which I can make a function for
+
+
+Another idea is just to go step by step, with a batch, with recusion at each step, the transformer can switch to using it or not
