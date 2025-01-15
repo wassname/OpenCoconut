@@ -102,3 +102,19 @@ should be like
 
 hm so cache position doesn't help
 maybe I can just append the last part of the thinking cache onto the last one???
+
+
+# 2025-01-14 20:49:54
+
+Ok so kv cache does not support multiple forwards!!! there are various issues with this, but if you go forward 40 with a cache of 30, the new cache is 70
+
+
+, so we have two paths
+- run two forwards, on to generate thought hidden states (self.model.forward), one to go forward
+- or go on token at a time using kv cache, this is less elegent but faster as it's one pass... ok this only handles a batch of one?, soo refactor to use the top one. Otherwise we would do one token forward pass over the whole batch
+- or just change it so every single forward has token embedding plus last hidden? this is not in the paper but is an experiment I should try. Maybe let it pay attention to one or the other based on the past input? But we are still not letting it chose when to think.... hmm
+- 
+```
+switch = F.sigmoid(nn.Linear(input_embeddings, 1)) # or whatever lstm and attn use
+embeddings = input_embeddings * switch + thought_hidden * (1-switch)
+```
