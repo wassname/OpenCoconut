@@ -316,7 +316,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         # This is ineffecient, we do a whole new forward pass. And it's because the transformer library doesn't handle kv cache while doing multiple inputs for a forward pass
         # it's get even more complicated when we have to handle multiple batches, with multiple thoughts, this is the simplest way to code it
 
-        # FIXME this is a simple way to write it... but the gradient seems complex. It might be better to it one token at a time and use the cache
+        # FIXME this is a simple way to write it... but the gradient seems complex. It might be better to it one token at a time and use the cache. This might use less memory and too?
         return super().forward(
             inputs_embeds=inputs_embeds2,
             attention_mask=attention_mask2,

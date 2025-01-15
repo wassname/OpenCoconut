@@ -118,3 +118,12 @@ Ok so kv cache does not support multiple forwards!!! there are various issues wi
 switch = F.sigmoid(nn.Linear(input_embeddings, 1)) # or whatever lstm and attn use
 embeddings = input_embeddings * switch + thought_hidden * (1-switch)
 ```
+
+# 2025-01-15 15:00:40
+
+Ok I coded up a version that generated the input_embeds from the thought, then does a full forward pass. This is nice code, but poor gradient and GPU ram management.
+
+With my 
+model 7gb
+stage 0: 17gb
+stage 1: 23.3
