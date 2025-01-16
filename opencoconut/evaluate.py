@@ -71,31 +71,33 @@ def evaluate(
     total_instances = 0
     total_correct = 0
     for batch in tqdm(dataloader):
-        if add_bot:
-            batch["input_ids"], batch["attention_mask"] = model.append_bot_token(batch["input_ids"], batch["attention_mask"])
+        # if add_bot:
+        #     batch["input_ids"], batch["attention_mask"] = model.append_bot_token(batch["input_ids"], batch["attention_mask"])
 
-        (
-            thought_ids,
-            language_ids,
-            thought_mask,
-            _,
-            _,
-            _,
-        ) = split_sequences(**batch, coconut_config=model.coconut_config)
-        batch_size = thought_ids.shape[0]
+        # (
+        #     thought_ids,
+        #     language_ids,
+        #     thought_mask,
+        #     _,
+        #     _,
+        #     _,
+        # ) = split_sequences(**batch, coconut_config=model.coconut_config)
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        batch_size = input_ids.shape[0]
         total_instances += batch_size
 
-        # Generate
+        # Generate 
         beam_output = model.generate(
-            input_ids=thought_ids.to(model.device),
-            attention_mask=thought_mask.to(model.device),
+            input_ids=input_ids.to(model.device),
+            attention_mask=attention_mask.to(model.device),
             max_new_tokens=max_new_tokens,
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.pad_token_id,
             # use_cache=False,
         )
         # Evaluate
-        for thought_ids_batch, output_batch in zip(thought_ids, beam_output):
+        for thought_ids_batch, output_batch in zip(input_ids, beam_output):
             decoded_language_ids = tokenizer.decode(language_ids[0])
             decoded_pred_text = tokenizer.decode(output_batch)
             answer = extract_generated_answer(
