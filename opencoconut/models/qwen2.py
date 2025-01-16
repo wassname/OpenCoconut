@@ -44,7 +44,10 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
             nn.Sigmoid(),
         )
         # start this as negative so we don't use much of the previous hidden state
-        self.switch[-2].bias.data.fill_(-3)
+        # self.switch[0].bias.data.fill_(-2)
+        self.switch[1].bias.data.fill_(-5)
+        nn.init.xavier_normal_(self.switch[0].weight, gain=0.1)
+        nn.init.xavier_normal_(self.switch[1].weight, gain=0.01)
 
 
 
@@ -81,10 +84,8 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         """
         """
         if 'cache_position' in kwargs:
-            # raise NotImplementedError('cache_position')
-            del kwargs['cache_position']
-            del kwargs['past_key_values']
-
+            kwargs.pop('cache_position')
+            kwargs.pop('past_key_values', None)
 
         if ('inputs_embeds' in kwargs) and (kwargs['inputs_embeds'] is not None):
             inputs_embeds = kwargs.pop('inputs_embeds')
@@ -153,6 +154,7 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         loss = None
         if labels is not None:
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            assert torch.isfinite(loss).all(), f'loss is not finite {loss}'
         
         o = CausalLMOutputWithPast(
             loss=loss,
