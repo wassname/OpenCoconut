@@ -30,18 +30,18 @@ class CoconutConfig(PushToHubMixin):
         """
         Create a CoconutConfig instance from a tokenizer, automatically setting token IDs.
         """
-        bot = kwargs.pop('bot', '<bot>')
-        eot = kwargs.pop('eot', '<eot>')
+        # bot = kwargs.pop('bot', '<bot>')
+        # eot = kwargs.pop('eot', '<eot>')
         
-        # Add special tokens if they don't exist
-        if bot not in tokenizer.additional_special_tokens:
-            tokenizer.add_special_tokens({"additional_special_tokens": [bot, eot]})
+        # # Add special tokens if they don't exist
+        # if bot not in tokenizer.additional_special_tokens:
+        #     tokenizer.add_special_tokens({"additional_special_tokens": [bot, eot]})
         
         config_dict = {
-            'bot': bot,
-            'eot': eot,
-            'bot_id': tokenizer.convert_tokens_to_ids(bot),
-            'eot_id': tokenizer.convert_tokens_to_ids(eot),
+            # 'bot': bot,
+            # 'eot': eot,
+            # 'bot_id': tokenizer.convert_tokens_to_ids(bot),
+            # 'eot_id': tokenizer.convert_tokens_to_ids(eot),
             'pad_token_id': tokenizer.pad_token_id,
             **kwargs
         }

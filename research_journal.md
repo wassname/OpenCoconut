@@ -167,3 +167,10 @@ TODO:
 - no need for stages?
 - no need for special tokens or datasets
 - init switch as near zero
+- it's setup as autoregressive training, but evaled on answer... hmm I dunno
+
+# 2025-01-16 09:59:29
+
+Hmm it might be worth continuing with the prev branch as the gpu mem is about that same
+
+probobly worth it to go token by token tho

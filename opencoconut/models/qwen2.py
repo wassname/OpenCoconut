@@ -39,11 +39,12 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
         self.debug = os.environ.get("DEBUG") == "1"
 
         self.switch = nn.Sequential(
-            nn.Linear(config.hidden_size, 1, bias=True),
+            nn.Linear(config.hidden_size, 32, bias=False),
+            nn.Linear(32, 1, bias=True),
             nn.Sigmoid(),
         )
         # start this as negative so we don't use much of the previous hidden state
-        self.switch[0].bias.data.fill_(-10)
+        self.switch[-2].bias.data.fill_(-3)
 
 
 
@@ -125,11 +126,13 @@ class CoconutQwen2ForCausalLM(Qwen2ForCausalLM):
 
             # Here's the unique part, we add on information from the previous hidden state, onto the next input_embed, if the model chooses
             prev_input_embed = self.hs2embed(o.hidden_states).squeeze(1)
+            current_input_embed = inputs_embeds[:, t]
             if t%10==0:
                 prev_input_embed = prev_input_embed.detach() # detach  every N steps to prevent gradient explosion
+                current_input_embed = current_input_embed.detach() 
             if t < inputs_embeds.shape[1] - 1:
-                switch_output = self.switch(inputs_embeds[:, t])
-                new_embed = (switch_output * prev_input_embed) + inputs_embeds[:, t+1]
+                switch_output = self.switch(current_input_embed)
+                new_embed = inputs_embeds[:, t+1] + (switch_output * prev_input_embed)
                 inputs_embeds = torch.cat([inputs_embeds[:, :t+1], new_embed.unsqueeze(1), inputs_embeds[:, t+2:]], dim=1)
             else:
                 pass

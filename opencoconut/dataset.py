@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
 
 # NOTE: cannot support \n between eos1 and bot yet
-CHATML_LIKE_FORMAT = "{bos}\n{question}{eos}{bot}{eot}\n{cot_steps}\n{answer}{eos}"
+CHATML_LIKE_FORMAT = "{bos}\n{question}{eos}\n{cot_steps}\n{answer}{eos}"
 
 
 class CoTDataset(Dataset):
@@ -47,44 +47,31 @@ class CoTDataset(Dataset):
         else:
             self.current_stage = self.current_stage  # Use the current stage
 
-        prompt_formatted = self.prompt_format.format(
-            bos=self.tokenizer.bos_token,
-            question=item["question"],
-            eos=self.tokenizer.eos_token,
-            bot=self.coconut_config.bot,
-            eot=self.coconut_config.eot,
-            cot_steps=(
-                "\n".join(item["cot"][self.current_stage :])
-                if self.include_reasoning_steps
-                else ""
-            ),
-            answer=item["answer"],
-        )
 
-        tokenized = self.tokenizer.encode_plus(
-            prompt_formatted,
-            max_length=self.max_length,
+        cot_steps=(
+            "\n".join(item["cot"][self.current_stage :])
+            if self.include_reasoning_steps
+            else ""
+        )
+        messages = [
+            {"role": "system", "content": "Please reason step by step, and put your final answer as 'Answer: X'"},
+            {"role": "user", "content": item["question"]},
+            {"role": "assistant", "content": f"""{cot_steps}\n{item["answer"]}"""},
+        ]
+        
+        tok_kwargs = dict(
             add_special_tokens=True,
             padding="max_length",
             truncation=True,
-            padding_side='left',
+            max_length=self.max_length,
             return_tensors="pt",
+            return_dict=True,
         )
+        tokenized = self.tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, **tok_kwargs)
 
         input_ids = tokenized["input_ids"].squeeze(0)
         attention_mask = tokenized["attention_mask"].squeeze(0)
         labels = input_ids.clone()
-
-        # Mask question and thought tokens
-        eot_positions = (input_ids == self.coconut_config.eot_id).nonzero(
-            as_tuple=True
-        )[0]
-        if len(eot_positions) > 0:
-            eot_pos = eot_positions[0]  # Position of the first <eot> token
-            labels[: eot_pos + 1] = -100  # Mask up to and including <eot>
-
-        # Mask padding tokens using attention_mask
-        labels[attention_mask == 0] = -100
 
         return {
             "input_ids": input_ids,
